@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import init, { predict } from 'brique-demo-wasm';
 import './App.css';
 
   
@@ -14,6 +15,8 @@ function DrawingCanvas({penWidth} : {penWidth: number}) {
   const [drawing, setDrawing] = useState<boolean>(false);
   const initialPixelMap = new Array(28*28).fill(0);
   const [pixelMap, setPixelMap] = useState<number[]>(initialPixelMap);
+  const [prediction, setPrediction] = useState<number>(0);
+  const [prob, setProb] = useState<number>(0);
 
   function startDrawing(e: React.MouseEvent<HTMLCanvasElement>) {
     setDrawing(true);
@@ -35,6 +38,7 @@ function DrawingCanvas({penWidth} : {penWidth: number}) {
     ctx.lineCap = "round";
     ctx.lineTo(e.nativeEvent.offsetX, e.nativeEvent.offsetY);
     ctx.stroke();
+    getPixelMap();
   }
 
   function stopDrawing() {
@@ -47,6 +51,7 @@ function DrawingCanvas({penWidth} : {penWidth: number}) {
     const ctx = canvas.getContext("2d");
     if(!ctx) return;
     ctx.clearRect(0,0, canvas.width, canvas.height);
+    getPixelMap();
   }
 
   function getPixelMap() {
@@ -55,13 +60,13 @@ function DrawingCanvas({penWidth} : {penWidth: number}) {
     const ctx = canvas.getContext("2d");
     if (!ctx) return [];
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    let pixelMap: number[] = [];
+    let rawPixelMap: number[] = [];
     
     for (let i = 3; i < imageData.data.length; i += 4) {
-       pixelMap.push(imageData.data[i]);
+       rawPixelMap.push(imageData.data[i]);
     }
-    console.log(pixelMap);
-    const newPixelMap = resizeBitmap(pixelMap, canvas.width, canvas.height);
+
+    const newPixelMap = resizeBitmap(rawPixelMap, canvas.width, canvas.height);
     setPixelMap(newPixelMap);
   }
 
@@ -113,6 +118,55 @@ function DrawingCanvas({penWidth} : {penWidth: number}) {
     return dst;
   }
 
+
+  function readBinaryFile(blob: Blob): Promise<Uint8Array> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            if (reader.result instanceof ArrayBuffer) {
+                resolve(new Uint8Array(reader.result));
+            } else {
+                reject(new Error("Failed to read file as ArrayBuffer"));
+            }
+        };
+        reader.onerror = () => reject(reader.error);
+        reader.readAsArrayBuffer(blob);
+    });
+  }
+
+  async function processModel() {
+      const response = await fetch("mnist_128x128_0.9775.brq"); 
+      const blob = await response.blob(); 
+  
+      const byteArray = await readBinaryFile(blob);
+      return byteArray;
+  }
+
+  function getIndexOfMaxValue(arr: Float64Array): number {
+    if (arr.length === 0) {
+      throw new Error("Array is empty");
+    }
+
+    return arr.reduce((maxIndex, currentValue, currentIndex, array) => {
+      return currentValue > array[maxIndex] ? currentIndex : maxIndex;
+    }, 0);
+  }
+
+  function getMaxValue(arr:Float64Array): number {
+    return arr.reduce((max, current) => {
+      return current > max ? current : max;}, arr[0]);
+  }
+
+  async function modelEvaluation() {
+    let output = await processModel()
+    await init();
+     let image_input = Float64Array.from(pixelMap);
+     let model_output = predict(output, image_input);
+    
+    setPrediction(getIndexOfMaxValue(model_output));
+    setProb(getMaxValue(model_output));
+  }
+
   return (
     <div>
       <canvas
@@ -125,8 +179,10 @@ function DrawingCanvas({penWidth} : {penWidth: number}) {
         onMouseUp={stopDrawing}
         onMouseOut={stopDrawing}
       />
-      <button onClick={() => console.log(getPixelMap())}>Get Pixel Map</button>
       <button onClick={clear}>Clear</button>
+      <button onClick={modelEvaluation}>Predict</button>
+      <p style={{color: "black"}}>I think it's a {prediction}</p>
+      <p style={{color: "black"}}>Certainty : {prob*100}%</p>
       <SquaredGrid n={28*28} data={pixelMap}/>
     </div>
   );
@@ -137,7 +193,7 @@ function App() {
   return (
     <div className="App">
       <header className="App-header">
-        <DrawingCanvas penWidth={15}/>
+        <DrawingCanvas penWidth={30}/>
       </header>
     </div>
   );
