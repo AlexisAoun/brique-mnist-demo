@@ -32,6 +32,8 @@
   border-color: black;
   border-style: solid;
   color: black;
+  background-color: #FFFFFF;
+  opacity: 0;
   font-size: 10px;
   height: 23px;
   width: 23px;
@@ -39,9 +41,14 @@
 
 .grid {
   display: grid;
+  background-color: lightgray;
   grid-template-columns: repeat(28,23px); 
   grid-template-rows: repeat(28,23px); 
 
+}
+
+.reset-button {
+margin-top: 5em;
 }
 
 @keyframes App-logo-spin {
